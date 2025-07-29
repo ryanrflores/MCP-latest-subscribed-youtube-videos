@@ -17,62 +17,57 @@ An MCP server that allows you to get the latest videos from your YouTube subscri
 
 1. FastMCP Framework
 
-Simplified syntax using @mcp.tool() decorators
-No need for complex async/await handling
-Cleaner, more readable code structure
+  Simplified syntax using @mcp.tool() decorators
+  No need for complex async/await handling
+  Cleaner, more readable code structure
 
 2. UV Compatibility
 
-Updated pyproject.toml for uv package manager
-Simplified dependency management
-Better project structure
+  Updated pyproject.toml for uv package manager
+  Simplified dependency management
+  Better project structure
 
 3. Simplified Architecture
 
-Removed complex MCP protocol handling
-Direct function-based tools
-Easier to debug and maintain
+  Removed complex MCP protocol handling
+  Direct function-based tools
+  Easier to debug and maintain
 
 Setup Instructions:
 1. Install UV
-bash# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
+  macOS/Linux
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+  Windows
+    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 2. Initialize Project
-bashcd your-project-directory
-uv sync
+  cd your-project-directory
+  uv sync
 3. Test the Server
-bashuv run python youtube_mcp_server.py
+  uv run python youtube_mcp_server.py
 4. Claude Desktop Configuration
-json{
-  "mcpServers": {
-    "youtube-latest-videos": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/absolute/path/to/your/project",
-        "run",
-        "python", 
-        "youtube_mcp_server.py"
-      ]
+    json{
+      "mcpServers": {
+        "youtube-latest-videos": {
+          "command": "uv",
+          "args": [
+            "--directory",
+            "/absolute/path/to/your/project",
+            "run",
+            "python", 
+            "youtube_mcp_server.py"
+          ]
+        }
+      }
     }
-  }
-}
-Project Structure:
-your-project/
-├── pyproject.toml          # UV configuration
-├── youtube_mcp_server.py   # FastMCP server
-├── credentials.json        # YouTube API credentials
-├── token.json             # Auto-generated
-├── setup.sh               # Setup script
-├── test_server.py         # Test script
-└── README.md              # Documentation
-Benefits of FastMCP + UV:
 
-Simpler Code: FastMCP reduces boilerplate significantly
-Better Dependency Management: UV handles Python dependencies efficiently
-Faster Startup: UV's resolver is much faster than pip
-Development Friendly: Easy testing and debugging
-Modern Toolchain: Uses the latest Python packaging standards
+Project Structure:
+    your-project/
+    ├── pyproject.toml          # UV configuration
+    ├── youtube_mcp_server.py   # FastMCP server
+    ├── credentials.json        # YouTube API credentials
+    ├── token.json             # Auto-generated
+    ├── setup.sh               # Setup script
+    ├── test_server.py         # Test script
+    └── README.md              # Documentation
+
