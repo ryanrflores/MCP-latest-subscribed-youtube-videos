@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
 
-import asyncio
-import json
 import os
+import json
 from datetime import datetime, timedelta
-from typing import Any, Sequence
+from typing import Optional, List, Dict, Any
 
-from mcp import ClientSession, StdioServerSession
-from mcp.server import NotificationOptions, Server
-from mcp.server.models import InitializationOptions
-import mcp.server.stdio
-import mcp.types as types
-
+from mcp.server.fastmcp import FastMCP
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -28,7 +22,7 @@ class YouTubeClient:
         self.token_file = token_file
         self.youtube = None
     
-    async def authenticate(self):
+    def authenticate(self):
         """Authenticate with YouTube API using OAuth2"""
         creds = None
         
@@ -55,10 +49,10 @@ class YouTubeClient:
         self.youtube = build(API_SERVICE_NAME, API_VERSION, credentials=creds)
         return self.youtube
     
-    async def get_subscribed_channels(self):
+    def get_subscribed_channels(self) -> List[Dict[str, str]]:
         """Get all channels the user is subscribed to"""
         if not self.youtube:
-            await self.authenticate()
+            self.authenticate()
             
         channels = []
         next_page_token = None
@@ -86,10 +80,10 @@ class YouTubeClient:
         
         return channels
     
-    async def get_channel_latest_videos(self, channel_id, hours_ago=24):
+    def get_channel_latest_videos(self, channel_id: str, hours_ago: int = 24) -> List[Dict[str, Any]]:
         """Get latest videos from a specific channel within the last X hours"""
         if not self.youtube:
-            await self.authenticate()
+            self.authenticate()
             
         # Calculate time threshold
         time_threshold = datetime.utcnow() - timedelta(hours=hours_ago)
@@ -139,14 +133,14 @@ class YouTubeClient:
         except Exception as e:
             raise Exception(f"Error getting videos for channel {channel_id}: {str(e)}")
     
-    async def get_all_latest_videos(self, hours_ago=24):
+    def get_all_latest_videos(self, hours_ago: int = 24) -> List[Dict[str, Any]]:
         """Get latest videos from all subscribed channels"""
-        channels = await self.get_subscribed_channels()
+        channels = self.get_subscribed_channels()
         
         all_recent_videos = []
         
         for channel in channels:
-            recent_videos = await self.get_channel_latest_videos(
+            recent_videos = self.get_channel_latest_videos(
                 channel['channel_id'], 
                 hours_ago
             )
@@ -166,203 +160,108 @@ class YouTubeClient:
 # Initialize YouTube client
 youtube_client = YouTubeClient()
 
-# Create MCP server
-server = Server("youtube-latest-videos")
+# Create FastMCP app
+mcp = FastMCP("YouTube Latest Videos",request_timeout=300) # 5 minutes
 
-@server.list_tools()
-async def handle_list_tools() -> list[types.Tool]:
-    """List available tools"""
-    return [
-        types.Tool(
-            name="get_latest_youtube_videos",
-            description="Get the latest videos from all YouTube channels you're subscribed to",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "hours_ago": {
-                        "type": "number",
-                        "description": "Number of hours to look back for new videos (default: 24)",
-                        "default": 24
-                    },
-                    "limit": {
-                        "type": "number",  
-                        "description": "Maximum number of videos to return (default: 50)",
-                        "default": 50
-                    }
-                }
-            }
-        ),
-        types.Tool(
-            name="get_subscribed_channels",
-            description="Get a list of all YouTube channels you're subscribed to",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
-        ),
-        types.Tool(
-            name="get_channel_videos",
-            description="Get latest videos from a specific YouTube channel",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "channel_id": {
-                        "type": "string",
-                        "description": "The YouTube channel ID"
-                    },
-                    "hours_ago": {
-                        "type": "number",
-                        "description": "Number of hours to look back for new videos (default: 24)",
-                        "default": 24
-                    }
-                },
-                "required": ["channel_id"]
-            }
-        )
-    ]
+@mcp.tool()
+def get_latest_youtube_videos(hours_ago: int = 24, limit: int = 50) -> str:
+    """Get the latest videos from all YouTube channels you're subscribed to.
+    
+    Args:
+        hours_ago: Number of hours to look back for new videos (default: 24)
+        limit: Maximum number of videos to return (default: 50)
+    """
+    try:
+        videos = youtube_client.get_all_latest_videos(hours_ago)
+        
+        # Apply limit
+        if limit and len(videos) > limit:
+            videos = videos[:limit]
+        
+        if not videos:
+            return f"No new videos found in the last {hours_ago} hours from your subscribed channels."
+        
+        # Format the response
+        result = {
+            "total_videos": len(videos),
+            "hours_checked": hours_ago,
+            "videos": videos
+        }
+        
+        response_text = f"Found {len(videos)} new videos in the last {hours_ago} hours:\n\n"
+        
+        for video in videos:
+            published_utc = datetime.strptime(video['published_at'], '%Y-%m-%dT%H:%M:%SZ')
+            published_local = published_utc.strftime('%Y-%m-%d %H:%M UTC')
+            
+            response_text += f"📺 **{video['channel_title']}**\n"
+            response_text += f"🎬 {video['title']}\n"
+            response_text += f"🕒 {published_local}\n"
+            response_text += f"🔗 {video['url']}\n"
+            if video['description']:
+                response_text += f"📝 {video['description']}\n"
+            response_text += "\n" + "-" * 50 + "\n\n"
+        
+        response_text += f"\nJSON Data:\n```json\n{json.dumps(result, indent=2)}\n```"
+        return response_text
+        
+    except Exception as e:
+        return f"Error getting latest YouTube videos: {str(e)}"
 
-@server.call_tool()
-async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent]:
-    """Handle tool calls"""
-    
-    if name == "get_latest_youtube_videos":
-        try:
-            hours_ago = arguments.get("hours_ago", 24) if arguments else 24
-            limit = arguments.get("limit", 50) if arguments else 50
-            
-            videos = await youtube_client.get_all_latest_videos(hours_ago)
-            
-            # Apply limit
-            if limit and len(videos) > limit:
-                videos = videos[:limit]
-            
-            if not videos:
-                return [types.TextContent(
-                    type="text",
-                    text=f"No new videos found in the last {hours_ago} hours from your subscribed channels."
-                )]
-            
-            # Format the response
-            result = {
-                "total_videos": len(videos),
-                "hours_checked": hours_ago,
-                "videos": videos
-            }
-            
-            response_text = f"Found {len(videos)} new videos in the last {hours_ago} hours:\n\n"
-            
-            for video in videos:
-                published_utc = datetime.strptime(video['published_at'], '%Y-%m-%dT%H:%M:%SZ')
-                published_local = published_utc.strftime('%Y-%m-%d %H:%M UTC')
-                
-                response_text += f"📺 **{video['channel_title']}**\n"
-                response_text += f"🎬 {video['title']}\n"
-                response_text += f"🕒 {published_local}\n"
-                response_text += f"🔗 {video['url']}\n"
-                if video['description']:
-                    response_text += f"📝 {video['description']}\n"
-                response_text += "\n" + "-" * 50 + "\n\n"
-            
-            return [
-                types.TextContent(type="text", text=response_text),
-                types.TextContent(type="text", text=f"JSON Data:\n```json\n{json.dumps(result, indent=2)}\n```")
-            ]
-            
-        except Exception as e:
-            return [types.TextContent(
-                type="text",
-                text=f"Error getting latest YouTube videos: {str(e)}"
-            )]
-    
-    elif name == "get_subscribed_channels":
-        try:
-            channels = await youtube_client.get_subscribed_channels()
-            
-            response_text = f"You are subscribed to {len(channels)} channels:\n\n"
-            
-            for channel in channels:
-                response_text += f"📺 **{channel['channel_title']}**\n"
-                response_text += f"🆔 {channel['channel_id']}\n"
-                if channel['description']:
-                    desc = channel['description'][:100] + '...' if len(channel['description']) > 100 else channel['description']
-                    response_text += f"📝 {desc}\n"
-                response_text += "\n"
-            
-            return [
-                types.TextContent(type="text", text=response_text),
-                types.TextContent(type="text", text=f"JSON Data:\n```json\n{json.dumps(channels, indent=2)}\n```")
-            ]
-            
-        except Exception as e:
-            return [types.TextContent(
-                type="text",
-                text=f"Error getting subscribed channels: {str(e)}"
-            )]
-    
-    elif name == "get_channel_videos":
-        try:
-            if not arguments or "channel_id" not in arguments:
-                return [types.TextContent(
-                    type="text",
-                    text="Error: channel_id is required"
-                )]
-            
-            channel_id = arguments["channel_id"]
-            hours_ago = arguments.get("hours_ago", 24)
-            
-            videos = await youtube_client.get_channel_latest_videos(channel_id, hours_ago)
-            
-            if not videos:
-                return [types.TextContent(
-                    type="text",
-                    text=f"No new videos found in the last {hours_ago} hours for channel {channel_id}."
-                )]
-            
-            response_text = f"Found {len(videos)} new videos in the last {hours_ago} hours:\n\n"
-            
-            for video in videos:
-                published_utc = datetime.strptime(video['published_at'], '%Y-%m-%dT%H:%M:%SZ')
-                published_local = published_utc.strftime('%Y-%m-%d %H:%M UTC')
-                
-                response_text += f"🎬 {video['title']}\n"
-                response_text += f"🕒 {published_local}\n"
-                response_text += f"🔗 {video['url']}\n"
-                if video['description']:
-                    response_text += f"📝 {video['description']}\n"
-                response_text += "\n" + "-" * 50 + "\n\n"
-            
-            return [
-                types.TextContent(type="text", text=response_text),
-                types.TextContent(type="text", text=f"JSON Data:\n```json\n{json.dumps(videos, indent=2)}\n```")
-            ]
-            
-        except Exception as e:
-            return [types.TextContent(
-                type="text",
-                text=f"Error getting channel videos: {str(e)}"
-            )]
-    
-    else:
-        return [types.TextContent(
-            type="text",
-            text=f"Unknown tool: {name}"
-        )]
+@mcp.tool()
+def get_subscribed_channels() -> str:
+    """Get a list of all YouTube channels you're subscribed to."""
+    try:
+        channels = youtube_client.get_subscribed_channels()
+        
+        response_text = f"You are subscribed to {len(channels)} channels:\n\n"
+        
+        for channel in channels:
+            response_text += f"📺 **{channel['channel_title']}**\n"
+            response_text += f"🆔 {channel['channel_id']}\n"
+            if channel['description']:
+                desc = channel['description'][:100] + '...' if len(channel['description']) > 100 else channel['description']
+                response_text += f"📝 {desc}\n"
+            response_text += "\n"
+        
+        response_text += f"\nJSON Data:\n```json\n{json.dumps(channels, indent=2)}\n```"
+        return response_text
+        
+    except Exception as e:
+        return f"Error getting subscribed channels: {str(e)}"
 
-async def main():
-    # Run the server using stdin/stdout streams
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="youtube-latest-videos",
-                server_version="0.1.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
-        )
+@mcp.tool()
+def get_channel_videos(channel_id: str, hours_ago: int = 24) -> str:
+    """Get latest videos from a specific YouTube channel.
+    
+    Args:
+        channel_id: The YouTube channel ID
+        hours_ago: Number of hours to look back for new videos (default: 24)
+    """
+    try:
+        videos = youtube_client.get_channel_latest_videos(channel_id, hours_ago)
+        
+        if not videos:
+            return f"No new videos found in the last {hours_ago} hours for channel {channel_id}."
+        
+        response_text = f"Found {len(videos)} new videos in the last {hours_ago} hours:\n\n"
+        
+        for video in videos:
+            published_utc = datetime.strptime(video['published_at'], '%Y-%m-%dT%H:%M:%SZ')
+            published_local = published_utc.strftime('%Y-%m-%d %H:%M UTC')
+            
+            response_text += f"🎬 {video['title']}\n"
+            response_text += f"🕒 {published_local}\n"
+            response_text += f"🔗 {video['url']}\n"
+            if video['description']:
+                response_text += f"📝 {video['description']}\n"
+            response_text += "\n" + "-" * 50 + "\n\n"
+        
+        response_text += f"\nJSON Data:\n```json\n{json.dumps(videos, indent=2)}\n```"
+        return response_text
+        
+    except Exception as e:
+        return f"Error getting channel videos: {str(e)}"
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    mcp.run()
