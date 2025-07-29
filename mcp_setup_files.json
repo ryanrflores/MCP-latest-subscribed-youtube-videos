@@ -1,31 +1,28 @@
-# requirements.txt
-mcp>=0.2.0
-google-api-python-client>=2.0.0
-google-auth-oauthlib>=1.0.0
-google-auth-httplib2>=0.2.0
-
 # pyproject.toml
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "youtube-latest-videos-mcp"
 version = "0.1.0"
-description = "MCP server for getting latest YouTube videos from subscriptions"
+description = "FastMCP server for getting latest YouTube videos from subscriptions"
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
 dependencies = [
-    "mcp>=0.2.0",
+    "fastmcp>=0.2.0",
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-auth-httplib2>=0.2.0"
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 
 [project.scripts]
-youtube-latest-videos-mcp = "youtube_mcp_server:main"
+youtube-mcp = "youtube_mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["/"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 # Claude Desktop Configuration (add to your config file)
 # For macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
@@ -34,77 +31,17 @@ youtube-latest-videos-mcp = "youtube_mcp_server:main"
 {
   "mcpServers": {
     "youtube-latest-videos": {
-      "command": "python",
-      "args": ["/path/to/your/youtube_mcp_server.py"],
-      "env": {
-        "PYTHONPATH": "/path/to/your/project"
-      }
-    }
-  }
-}
-
-# Alternative Claude Desktop Configuration using uv
-{
-  "mcpServers": {
-    "youtube-latest-videos": {
       "command": "uv",
-      "args": ["--directory", "/path/to/your/project", "run", "python", "youtube_mcp_server.py"]
-    }
+      "args": [
+        "--directory",
+        "/Users/ryanf/latest-subscribed-youtube-videos/",
+        "run",
+        "python3", 
+        "youtube_mcp_server.py"
+      ],
+      "timeout": 300000,
+      "env": {
+          "MCP_SERVER_REQUEST_TIMEOUT": "300"
+      }
   }
 }
-
-# Development setup script (setup.sh)
-#!/bin/bash
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Make the server executable
-chmod +x youtube_mcp_server.py
-
-echo "Setup complete!"
-echo "Next steps:"
-echo "1. Get YouTube API credentials from Google Cloud Console"
-echo "2. Save credentials as 'credentials.json' in this directory"
-echo "3. Add the server configuration to your Claude Desktop config"
-echo "4. Restart Claude Desktop"
-
-# Test script (test_server.py)
-#!/usr/bin/env python3
-
-import asyncio
-import json
-from mcp import ClientSession, StdioServerSession
-from contextlib import AsyncExitStack
-
-async def test_server():
-    """Test the MCP server functionality"""
-    
-    # This would normally connect to the actual server
-    # For testing, you can run the server manually and test tools
-    
-    print("Testing MCP Server...")
-    print("Available tools:")
-    print("1. get_latest_youtube_videos")
-    print("2. get_subscribed_channels") 
-    print("3. get_channel_videos")
-    
-    # In a real test, you would:
-    # 1. Start the server process
-    # 2. Connect via MCP protocol
-    # 3. Call the tools
-    # 4. Verify responses
-    
-    print("To test manually:")
-    print("1. Run: python youtube_mcp_server.py")
-    print("2. Send MCP messages via stdin/stdout")
-    print("3. Or integrate with Claude Desktop")
-
-if __name__ == "__main__":
-    asyncio.run(test_server())
